@@ -1,3 +1,5 @@
+/* Modified 2026 by heast13 for dpdf-voice: MSVC (Windows) support.
+ * See vendor/hushmic-denoiser/PATCHES.md. Original: ceva-ip/DPDFNet, Apache-2.0. */
 #ifndef DPDF_INTERNAL_H
 #define DPDF_INTERNAL_H
 #include "dpdf_dprnn.h"

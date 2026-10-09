@@ -1,3 +1,5 @@
+/* Modified 2026 by heast13 for dpdf-voice: MSVC (Windows) support.
+ * See vendor/hushmic-denoiser/PATCHES.md. Original: ceva-ip/DPDFNet, Apache-2.0. */
 /* Experimental FP16 weights, FP32 activations/accumulators. F16C only here. */
 #include "internal.h"
 #include <immintrin.h>

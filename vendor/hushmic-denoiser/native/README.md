@@ -1,6 +1,14 @@
 # Vendored DPDFNet native runtime
 
-Unmodified copies of the DPDFNet authors' standalone C inference runtime and
+> **dpdf-voice:** four files here are modified for MSVC (Windows):
+> `runtime/dpdf_dprnn.c`, `runtime/fp16.c`, `runtime/int8.c` and
+> `runtime/internal.h`. Each starts with a notice; the changes are listed in
+> `../PATCHES.md`. They no longer match `artifacts/v1/SHA256SUMS`, which is
+> why the upstream test suite is not run in dpdf-voice. The weight blobs come
+> from `scripts/fetch-assets.ps1` of dpdf-voice (same files and checksums as
+> HushMic's `scripts/setup-assets.sh`). The rest of this file is HushMic's text.
+
+Copies of the DPDFNet authors' standalone C inference runtime and
 the generated model code for `dpdfnet8_48khz_hr` and `dpdfnet2_48khz_hr`,
 taken from <https://github.com/ceva-ip/DPDFNet> at commit
 `6a5dbd3ea5dbea88c30a2be8e7c689b5eb26b533`:

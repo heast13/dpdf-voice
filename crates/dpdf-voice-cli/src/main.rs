@@ -54,7 +54,7 @@ fn run() -> Result<()> {
 
     // Pad the tail so the delayed output covers the whole input.
     let mut padded = input.clone();
-    padded.extend(std::iter::repeat(0.0).take(latency + hushmic_denoiser::HOP));
+    padded.extend(std::iter::repeat_n(0.0, latency + hushmic_denoiser::HOP));
 
     let start = Instant::now();
     let mut output = Vec::with_capacity(padded.len());

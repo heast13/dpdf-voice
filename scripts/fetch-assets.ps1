@@ -38,8 +38,12 @@ $archive = [IO.Compression.ZipFile]::OpenRead($zip)
 try {
     $entry = $archive.Entries | Where-Object { $_.FullName -like '*/lib/onnxruntime.dll' }
     [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $assets 'onnxruntime.dll'), $true)
-    $lic = $archive.Entries | Where-Object { $_.FullName -like '*/LICENSE' } | Select-Object -First 1
-    if ($lic) { [IO.Compression.ZipFileExtensions]::ExtractToFile($lic, (Join-Path $assets 'LICENSE-onnxruntime.txt'), $true) }
+    # License and third-party notices must ship with onnxruntime.dll.
+    foreach ($n in @(@('LICENSE', 'LICENSE-onnxruntime.txt'), @('ThirdPartyNotices.txt', 'ThirdPartyNotices-onnxruntime.txt'))) {
+        $e = $archive.Entries | Where-Object { $_.FullName -like "*/$($n[0])" } | Select-Object -First 1
+        if (-not $e) { throw "$($n[0]) fehlt im ONNX-Runtime-Archiv" }
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path $assets $n[1]), $true)
+    }
 } finally {
     $archive.Dispose()
 }

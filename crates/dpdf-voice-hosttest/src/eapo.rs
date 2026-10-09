@@ -46,7 +46,7 @@ pub fn run(dll: &str, input: &[f32], params: &[(&str, f32)]) -> Result<Vec<f32>,
     if module.is_null() {
         return Err(format!("LoadLibrary failed: {dll}"));
     }
-    let main = unsafe { GetProcAddress(module, b"VSTPluginMain\0".as_ptr()) };
+    let main = unsafe { GetProcAddress(module, c"VSTPluginMain".as_ptr() as *const u8) };
     if main.is_null() {
         return Err("VSTPluginMain missing".into());
     }

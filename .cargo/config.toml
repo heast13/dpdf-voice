@@ -1,0 +1,5 @@
+# Link the C runtime statically (Rust code and, through the cc crate, the
+# native C engine), so dpdf_voice.dll needs no Visual C++ Redistributable.
+# onnxruntime.dll, only used as fallback engine, still links it dynamically.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

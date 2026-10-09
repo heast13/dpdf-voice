@@ -52,6 +52,9 @@ fn run() -> Result<(), String> {
         return Err("usage: dpdf-voice-hosttest [--eapo] <plugin.dll> <in.wav> <out.wav> [Model Limit Bypass]".into());
     }
     if args[1] == "--eapo" {
+        if args.len() < 5 {
+            return Err("usage: dpdf-voice-hosttest --eapo <plugin.dll> <in.wav> <out.wav>".into());
+        }
         let input = read_mono(&args[3])?;
         let output = eapo::run(&args[2], &input, &[("Model", 0.0), ("Limit", 1.0), ("Bypass", 0.0)])?;
         return write_mono(&args[4], &output);

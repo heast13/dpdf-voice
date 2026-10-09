@@ -10,26 +10,40 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
+      - name: Check tag matches Cargo version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          if ("$env:GITHUB_REF_NAME" -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match Cargo version $version"
+          }
 
       - name: Cache assets
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: assets
           key: assets-${{ hashFiles('scripts/fetch-assets.ps1') }}
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ hashFiles('Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', '.cargo/config.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
 
       - name: Fetch assets
         shell: pwsh
@@ -47,8 +61,9 @@ jobs:
         run: |
           $stage = Get-ChildItem dist -Directory | Select-Object -First 1
           python scripts/ci-check.py (Join-Path $stage.FullName 'dpdf-voice') target/release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dpdf-voice-windows-x64
           path: |
@@ -62,11 +77,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dpdf-voice-windows-x64
           path: dist
-      - name: Create release
+      # Created as a draft: review it on GitHub, then publish.
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --draft

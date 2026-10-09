@@ -29,6 +29,14 @@ const PARAM_COUNT: i32 = 3;
 /// plus headroom for the host's own frames.
 const MIN_PROCESS_STACK: usize = 192 * 1024;
 
+/// Stack `resume` needs to hand loading to the loader thread and take the
+/// boxed result back.
+const MIN_RESUME_STACK: usize = 32 * 1024;
+
+/// Largest block size the output FIFO is sized for up front; larger blocks
+/// still work but grow the FIFO on the audio thread.
+const MAX_RESERVED_BLOCK: usize = 1 << 16;
+
 /// Stack for the loader thread. Creating the ONNX Runtime session needs more
 /// than 128 KB, while hosts like the Windows audio service call into plugins
 /// on threads with small stacks, so loading always runs on its own thread.
@@ -111,7 +119,9 @@ impl PluginParameters for Params {
 
     fn set_parameter(&self, index: i32, value: f32) {
         if let Some(slot) = self.slot(index) {
-            slot.set(value.clamp(0.0, 1.0));
+            if value.is_finite() {
+                slot.set(value.clamp(0.0, 1.0));
+            }
         }
     }
 
@@ -142,7 +152,9 @@ impl PluginParameters for Params {
 struct DpdfVoice {
     params: Arc<Params>,
     sample_rate: f32,
-    stream: Option<StreamDenoiser>,
+    /// Boxed so moving it between the loader thread and the host thread
+    /// costs no stack: hosts may call `resume` on threads with small stacks.
+    stream: Option<Box<StreamDenoiser>>,
     loaded_model: Option<Model>,
     /// Set after a failed load so the audio thread does not retry every block.
     load_failed: Option<Model>,
@@ -153,6 +165,11 @@ struct DpdfVoice {
     /// Result of the last stack check, so a change is logged only once.
     stack_ok: Option<bool>,
     first_block_logged: bool,
+    /// Inference errors and non-finite samples are logged once per stream,
+    /// so a persistent fault cannot flood the log from the audio thread.
+    fault_logged: bool,
+    /// Input copy with NaN/Inf replaced, used only when such samples arrive.
+    clean_input: Vec<f32>,
 }
 
 impl DpdfVoice {
@@ -169,14 +186,11 @@ impl DpdfVoice {
             return;
         }
         match load_denoiser(want) {
-            Ok(denoiser) => {
-                paths::log(&format!("model {} loaded, engine {}", want.label(), denoiser.engine()));
-                if let Some(why) = denoiser.fallback_reason() {
-                    paths::log(&format!("native engine not used: {why}"));
-                }
-                self.stream = Some(StreamDenoiser::new(denoiser));
+            Ok(stream) => {
+                self.stream = Some(stream);
                 self.loaded_model = Some(want);
                 self.load_failed = None;
+                self.fault_logged = false;
                 self.reset_fifo();
             }
             Err(e) => {
@@ -188,7 +202,7 @@ impl DpdfVoice {
 
     fn reset_fifo(&mut self) {
         self.out_fifo.clear();
-        self.out_fifo.extend(std::iter::repeat(0.0).take(HOP));
+        self.out_fifo.extend(std::iter::repeat_n(0.0, HOP));
         if let Some(stream) = self.stream.as_mut() {
             stream.reset();
         }
@@ -233,12 +247,36 @@ impl DpdfVoice {
             denoiser.set_attenuation_limit_db(limit);
         }
 
+        // A single NaN/Inf would poison the model's recurrent state (for the
+        // ONNX engine permanently), so non-finite input becomes silence.
+        let input = if input.iter().all(|x| x.is_finite()) {
+            input
+        } else {
+            self.clean_input.clear();
+            self.clean_input
+                .extend(input.iter().map(|&x| if x.is_finite() { x } else { 0.0 }));
+            &self.clean_input
+        };
         self.out_fifo.extend(stream.process(input));
-        if let Some(e) = stream.take_error() {
-            paths::log(&format!("inference error: {e:?}"));
-        }
+        let error = stream.take_error();
         for (dst, src) in output.iter_mut().zip(self.out_fifo.drain(..input.len())) {
             *dst = src;
+        }
+
+        let nonfinite_output = !output.iter().all(|x| x.is_finite());
+        if nonfinite_output {
+            // Never hand NaN/Inf to the host; restart the engine from a clean state.
+            output.fill(0.0);
+            self.reset_fifo();
+        }
+        if !self.fault_logged {
+            if let Some(e) = error {
+                self.fault_logged = true;
+                paths::log(&format!("inference error (logged once): {e:?}"));
+            } else if nonfinite_output {
+                self.fault_logged = true;
+                paths::log("non-finite output, engine reset (logged once)");
+            }
         }
     }
 }
@@ -254,6 +292,8 @@ impl Plugin for DpdfVoice {
             out_fifo: VecDeque::with_capacity(HOP + 8192),
             stack_ok: None,
             first_block_logged: false,
+            fault_logged: false,
+            clean_input: Vec::new(),
         }
     }
 
@@ -280,14 +320,29 @@ impl Plugin for DpdfVoice {
     }
 
     fn set_block_size(&mut self, size: i64) {
-        let need = HOP + size.max(0) as usize;
+        let block = (size.max(0) as usize).min(MAX_RESERVED_BLOCK);
+        let need = HOP + block;
         if self.out_fifo.capacity() < need {
-            self.out_fifo.reserve(need - self.out_fifo.len());
+            let _ = self.out_fifo.try_reserve(need - self.out_fifo.len());
+        }
+        if self.clean_input.capacity() < block {
+            let _ = self.clean_input.try_reserve(block);
         }
     }
 
     fn resume(&mut self) {
         let _ = catch_unwind(AssertUnwindSafe(|| {
+            // A new start retries a model that failed before (for example a
+            // file briefly locked by a virus scanner).
+            self.load_failed = None;
+            if self.sample_rate as u32 != SAMPLE_RATE {
+                return;
+            }
+            let free = paths::stack_remaining();
+            if free < MIN_RESUME_STACK {
+                paths::log(&format!("resume with only {} KB stack left, loading deferred", free / 1024));
+                return;
+            }
             self.ensure_model();
             self.reset_fifo();
         }));
@@ -295,7 +350,7 @@ impl Plugin for DpdfVoice {
 
     fn process(&mut self, buffer: &mut AudioBuffer<f32>) {
         let (inputs, mut outputs) = buffer.split();
-        if inputs.len() == 0 || outputs.len() == 0 {
+        if inputs.is_empty() || outputs.is_empty() {
             return;
         }
         let input = inputs.get(0);
@@ -342,21 +397,45 @@ fn ensure_runtime() -> Result<(), String> {
         .clone()
 }
 
-fn load_denoiser(model: Model) -> Result<Denoiser, String> {
+/// Loads `model` on a dedicated thread with a large stack and returns the
+/// ready stream boxed, so only a pointer crosses back to the host thread.
+fn load_denoiser(model: Model) -> Result<Box<StreamDenoiser>, String> {
     std::thread::Builder::new()
         .name("dpdf-voice-loader".into())
         .stack_size(LOADER_STACK)
         .spawn(move || {
-            ensure_runtime()?;
             let dir = paths::plugin_dir().ok_or("plugin folder not found")?;
             let path = dir.join(model.file_name());
             // Native INT8 engine when the CPU has AVX2/FMA and the model's
             // .weights.f32 file is present and intact, ONNX Runtime otherwise.
-            Denoiser::from_file_with(&path, Inference::Auto).map_err(|e| format!("{}: {e:?}", path.display()))
+            // The native engine does not need ONNX Runtime, so a missing
+            // onnxruntime.dll only matters when native cannot run.
+            if let Err(e) = ensure_runtime() {
+                if !native_possible(&path) {
+                    return Err(e);
+                }
+                paths::log(&format!("ONNX Runtime unavailable, native engine only: {e}"));
+            }
+            let denoiser = Denoiser::from_file_with(&path, Inference::Auto)
+                .map_err(|e| format!("{}: {e:?}", path.display()))?;
+            paths::log(&format!("model {} loaded, engine {}", model.label(), denoiser.engine()));
+            if let Some(why) = denoiser.fallback_reason() {
+                paths::log(&format!("native engine not used: {why}"));
+            }
+            Ok(Box::new(StreamDenoiser::new(denoiser)))
         })
         .map_err(|e| format!("loader thread: {e}"))?
         .join()
         .map_err(|_| "loader thread panicked".to_string())?
+}
+
+/// Whether the native INT8 engine can run without falling back to ONNX:
+/// AVX2 and FMA, and the model's packed weights next to the model file.
+/// (The engine still verifies the weights' checksum itself.)
+fn native_possible(model_path: &std::path::Path) -> bool {
+    let cpu = is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma");
+    let weights = model_path.with_extension("weights.f32");
+    cpu && weights.is_file()
 }
 
 /// Lock-free f32 cell for parameters shared between host and audio thread.
