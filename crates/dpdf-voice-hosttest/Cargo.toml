@@ -1,0 +1,12 @@
+[package]
+name = "dpdf-voice-hosttest"
+description = "Loads the dpdf-voice VST2 DLL like a host and runs a WAV file through it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+vst.workspace = true
+hound.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "dpdf-voice-vst"
+description = "DPDFNet noise suppression as a VST2 plugin for Equalizer APO and OBS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "dpdf_voice"
+crate-type = ["cdylib"]
+
+[dependencies]
+hushmic-denoiser.workspace = true
+vst.workspace = true

@@ -1,0 +1,5 @@
+/target
+/assets
+*.wav
+/dist
+__pycache__/

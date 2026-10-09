@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = ["crates/dpdf-voice-cli", "crates/dpdf-voice-vst", "crates/dpdf-voice-hosttest"]
+exclude = ["vendor"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/heast13/dpdf-voice"
+
+[workspace.dependencies]
+# DPDFNet engine from HushMic, pinned to the release that was tested on Linux.
+hushmic-denoiser = { git = "https://github.com/Fovty/HushMic", tag = "v0.10.2", features = ["native"] }
+# vst-rs is archived upstream but is the only Rust VST2 implementation; VST2 is
+# what Equalizer APO and OBS load.
+vst = { version = "0.4", features = ["disable_deprecation_warning"] }
+hound = "3.5"
+
+[patch.crates-io]
+# vst 0.4.0 with the plugin cache moved out of AEffect::user, which hosts
+# such as Equalizer APO overwrite. See vendor/vst/PATCHES.md.
+vst = { path = "vendor/vst" }
+
+[patch."https://github.com/Fovty/HushMic"]
+# hushmic-denoiser v0.10.2 with the native C engine building under MSVC.
+# See vendor/hushmic-denoiser/PATCHES.md.
+hushmic-denoiser = { path = "vendor/hushmic-denoiser" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

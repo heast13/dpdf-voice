@@ -1,0 +1,11 @@
+[package]
+name = "dpdf-voice-cli"
+description = "Offline test tool: denoise a WAV file with DPDFNet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+hushmic-denoiser.workspace = true
+hound.workspace = true

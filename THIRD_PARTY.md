@@ -1,0 +1,17 @@
+# Third-party components
+
+dpdf-voice is licensed under MIT OR Apache-2.0. It builds on and ships the
+following components, each under its own license.
+
+| Component | Author | License | Where |
+|---|---|---|---|
+| DPDFNet models (`dpdfnet8_48khz_hr`, `dpdfnet2_48khz_hr`) and packed weights (`*.weights.f32`) | Ceva ([ceva-ip/DPDFNet](https://github.com/ceva-ip/DPDFNet)) | Apache-2.0 | release ZIP, fetched by `scripts/fetch-assets.ps1` from the HushMic v0.10.2 release |
+| DPDFNet native C runtime and generated model code | Ceva | Apache-2.0 | `vendor/hushmic-denoiser/native/` (see its `LICENSE` and `README.md`) |
+| hushmic-denoiser v0.10.2 | Fovty ([HushMic](https://github.com/Fovty/HushMic)) | MIT OR Apache-2.0 | `vendor/hushmic-denoiser/`, patched for MSVC, see `PATCHES.md` |
+| vst 0.4.0 (vst-rs) | RustAudio ([vst-rs](https://github.com/RustAudio/vst-rs)) | MIT | `vendor/vst/`, patched, see `PATCHES.md` |
+| ONNX Runtime 1.27.0 | Microsoft ([onnxruntime](https://github.com/microsoft/onnxruntime)) | MIT | `onnxruntime.dll` in the release ZIP, license in `LICENSE-onnxruntime.txt` |
+| Rust crates (ort, rustfft, ndarray, hound, sha2, libloading, …) | various | MIT and/or Apache-2.0 | linked at build time, see `Cargo.lock` |
+
+VST is a trademark of Steinberg Media Technologies GmbH. dpdf-voice
+implements the VST 2.4 plugin interface through vst-rs and does not include
+the Steinberg VST SDK.
