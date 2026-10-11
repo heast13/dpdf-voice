@@ -7,6 +7,8 @@ model, through the engine of [HushMic](https://github.com/Fovty/HushMic), and
 works system-wide: Discord, Teams, OBS and every other app get the cleaned
 microphone.
 
+Looking for something that works without Equalizer APO? See [kyrr](https://github.com/heast13/kyrr), the same DPDFNet engine as an audio filter that installs itself, with dictation on top.
+
 Why another denoiser: in my tests RNNoise and DeepFilterNet swallowed soft
 speech onsets such as "v" or "f" with some microphones. DPDFNet kept them.
 
